@@ -1,0 +1,22 @@
+# Python
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/.env
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Uploaded / generated media
+backend/app/static/qrcodes/*
+backend/app/static/profiles/*
+!backend/app/static/qrcodes/.gitkeep
+!backend/app/static/profiles/.gitkeep
+
+# OS / editor
+.DS_Store
+.vscode/
+*.log
