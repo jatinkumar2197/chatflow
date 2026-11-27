@@ -9,12 +9,8 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise RuntimeError(
-        "DATABASE_URL is missing from Render environment variables"
-    )
+    raise RuntimeError("DATABASE_URL is missing")
 
-# Railway URLs may use mysql://.
-# SQLAlchemy with PyMySQL requires mysql+pymysql://.
 if DATABASE_URL.startswith("mysql://"):
     DATABASE_URL = DATABASE_URL.replace(
         "mysql://", "mysql+pymysql://", 1
