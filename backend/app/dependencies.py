@@ -1,41 +1,102 @@
-"""
-Shared FastAPI dependencies, primarily for extracting and validating
-the current authenticated user from a JWT bearer token.
-"""
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
 
-from .database import get_db
-from .auth import decode_access_token
-from . import models
+import os
+import logging
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+from dotenv import load_dotenv
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+
+from .database import Base, engine
+from .routers import auth, users, chat
+
+load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
-def get_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
-) -> models.User:
-    """
-    Decode the bearer token, validate it, and return the corresponding
-    active User record. Raises 401 on any failure.
-    """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database initialized successfully")
+    except Exception:
+        logger.error("Database initialization failed")
 
-    payload = decode_access_token(token)
-    if payload is None:
-        raise credentials_exception
+    yield
 
-    user_id = payload.get("sub")
-    if user_id is None:
-        raise credentials_exception
+    engine.dispose()
 
-    user = db.query(models.User).filter(models.User.id == int(user_id)).first()
-    if user is None:
-        raise credentials_exception
 
-    return user
+app = FastAPI(
+    title="ChatFlow API",
+    description="Real-time chat application backend",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+FRONTEND_ORIGIN = os.getenv(
+    "FRONTEND_ORIGIN",
+    "http://localhost:5173"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[FRONTEND_ORIGIN],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+static_dir = os.path.join(
+    os.path.dirname(__file__), "static"
+)
+
+os.makedirs(static_dir, exist_ok=True)
+
+app.mount(
+    "/static",
+    StaticFiles(directory=static_dir),
+    name="static"
+)
+
+app.include_router(auth.router)
+app.include_router(users.router)
+app.include_router(chat.router)
+
+
+@app.get("/", tags=["Health"])
+def root():
+    return {
+        "status": "ok",
+        "service": "ChatFlow API"
+    }
+
+
+@app.get("/health", tags=["Health"])
+def health_check():
+    return {"status": "healthy"}
+
+
+@app.get("/health/db", tags=["Health"])
+def database_health():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+
+        return {
+            "status": "healthy",
+            "database": "connected"
+        }
+
+    except Exception:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "database": "disconnected"
+            }
+        )
